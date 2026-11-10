@@ -153,9 +153,15 @@ function build() {
   GROUPS.forEach((g, gi) => {
     const cy = H * (gi === 0 ? 0.3 : 0.7);
     const span = S * 1.4;
-    const cx0 = W / 2 - span * (g.length - 1) / 2 + (gi === 0 ? -S * 0.6 : S * 0.6);
-    const ids = g.map((p, k) => makeCard(p, cx0 + k * span, cy + (Math.random() - 0.5) * S * 0.4, gi));
-    for (let k = 0; k < ids.length - 1; k++) connect(ids[k], ids[k + 1]);
+    const cx = W / 2 + (gi === 0 ? -S * 1.2 : S * 1.2);
+    // colocadas en triángulo (lado = span)
+    const rad = span / Math.sqrt(3), rot = Math.random() * Math.PI * 2;
+    const ids = g.map((p, k) => {
+      const ang = rot + k * Math.PI * 2 / g.length;
+      return makeCard(p, cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad, gi);
+    });
+    // cuerdas en triángulo: 1–2, 2–3 y 3–1
+    for (let k = 0; k < ids.length; k++) connect(ids[k], ids[(k + 1) % ids.length]);
   });
   // las sueltas
   PHOTOS.forEach((_, i) => {
