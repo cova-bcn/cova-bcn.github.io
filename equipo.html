@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>COVA · equipo</title>
+<title>Qui som? · COVA</title>
 <style>
   html, body {
     margin: 0; height: 100%; overflow: hidden; background: #05050a; color: #fff;
@@ -32,6 +32,11 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
+  #title {
+    position: fixed; left: 0; right: 0; top: 18px; z-index: 1; margin: 0; pointer-events: none;
+    text-align: center; font: 900 clamp(30px, 6vw, 72px)/1 system-ui, sans-serif;
+    letter-spacing: .04em; color: #fff;
+  }
   #label {
     position: fixed; left: 0; top: 0; z-index: 4; pointer-events: none;
     font: 900 clamp(26px, 5vw, 56px)/1 system-ui, sans-serif; letter-spacing: .06em;
@@ -50,6 +55,7 @@
 <body>
 
 <canvas id="ropes"></canvas>
+<h1 id="title">Qui som?</h1>
 <div id="label"></div>
 <a id="back" href="cova-player.html" aria-label="Volver al reproductor">
   <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
@@ -95,6 +101,9 @@ const CARD_GRAV   = 0.12;  // las fotos caen por su peso (más bajo = más lento
 const ROPE_WIDTH  = 6;     // grosor del cable (px)
 const DAMP_CARD   = 0.985; // rozamiento de las fotos (1 = sin rozamiento)
 const DAMP_ROPE   = 0.97;
+const LETTER_MASS = 2;     // letras del título: más ligeras que las fotos
+const LETTER_GRAV = 0.07;  // caen despacio, como los píxeles del logo
+const DAMP_LETTER = 0.975;
 const ITER        = 14;    // iteraciones del solver (más = cable más firme)
 
 /* ===================== ESCENA ===================== */
@@ -106,6 +115,8 @@ const bodies = [];         // { x, y, px, py, im (1/masa), card? }
 const links  = [];         // { a, b, rest }
 const ropes  = [];         // lista de índices de cuerpos para dibujar cada cable
 const cards  = [];         // { el, b (índice cuerpo) }
+const letters = [];        // { el, b } letras de "Qui som?"
+const solids = [];         // cuerpos que chocan entre sí (fotos + letras)
 
 function addBody(x, y, im) { bodies.push({ x, y, px: x, py: y, im }); return bodies.length - 1; }
 
@@ -127,6 +138,8 @@ function makeCard(i, x, y, group) {
   document.body.appendChild(el);
   const b = addBody(x, y, 1 / CARD_MASS);
   bodies[b].card = true;
+  bodies[b].hw = bodies[b].hh = S / 2;
+  solids.push(b);
   cards.push({ el, b, group, url: PHOTOS[i].url });
   enableDrag(el, b);
   return b;
@@ -171,6 +184,32 @@ function build() {
     if (!used.has(i)) makeCard(i, W * 0.85, H * 0.5, -1);
   });
   cards.forEach(c => { c.el.style.width = c.el.style.height = S + 'px'; });
+}
+
+// Título: cada letra es un cuerpo fijo hasta que algo la golpea; entonces cae.
+function buildTitle() {
+  const t = document.getElementById('title');
+  const text = t.textContent;
+  t.textContent = '';
+  const spans = [...text].map(ch => {
+    const sp = document.createElement('span');
+    sp.textContent = ch; sp.style.display = 'inline-block';
+    if (ch === ' ') sp.style.width = '0.3em';
+    t.appendChild(sp); return sp;
+  });
+  const rects = spans.map(sp => sp.getBoundingClientRect());
+  spans.forEach((sp, i) => {
+    if (text[i] === ' ') { sp.style.visibility = 'hidden'; return; }
+    const r = rects[i];
+    sp.style.position = 'fixed'; sp.style.left = '0'; sp.style.top = '0';
+    const b = addBody(r.left + r.width / 2, r.top + r.height / 2, 0);
+    Object.assign(bodies[b], { letter: true, fixed: true, hw: r.width / 2 - 1.5, hh: r.height / 2 - 1.5 });
+    letters.push({ el: sp, b });
+    solids.push(b);
+  });
+}
+function freeLetter(B) {
+  B.fixed = false; B.im = 1 / LETTER_MASS; B.px = B.x; B.py = B.y;
 }
 
 function resize() {
@@ -228,8 +267,10 @@ function integrate() {
       B.y = Math.min(Math.max(S / 2, drag.ty), H - S / 2);
       continue;
     }
-    const d = B.card ? DAMP_CARD : DAMP_ROPE;
-    const vx = (B.x - B.px) * d, vy = (B.y - B.py) * d + (B.card ? CARD_GRAV : ROPE_GRAV);
+    if (B.fixed) continue;                          // letra aún en su sitio
+    const d = B.card ? DAMP_CARD : B.letter ? DAMP_LETTER : DAMP_ROPE;
+    const g = B.card ? CARD_GRAV : B.letter ? LETTER_GRAV : ROPE_GRAV;
+    const vx = (B.x - B.px) * d, vy = (B.y - B.py) * d + g;
     B.px = B.x; B.py = B.y;
     B.x += vx; B.y += vy;
   }
@@ -248,14 +289,16 @@ function solveLinks() {
   }
 }
 
-function solveCards() {
-  const h = S / 2 + 1;
-  for (let i = 0; i < cards.length; i++) {
-    for (let j = i + 1; j < cards.length; j++) {
-      const A = bodies[cards[i].b], B = bodies[cards[j].b];
+function solveSolids() {
+  for (let i = 0; i < solids.length; i++) {
+    for (let j = i + 1; j < solids.length; j++) {
+      const A = bodies[solids[i]], B = bodies[solids[j]];
       const dx = B.x - A.x, dy = B.y - A.y;
-      const ox = 2 * h - Math.abs(dx), oy = 2 * h - Math.abs(dy);
+      const ox = A.hw + B.hw + 1 - Math.abs(dx), oy = A.hh + B.hh + 1 - Math.abs(dy);
       if (ox <= 0 || oy <= 0) continue;
+      if (A.fixed && B.fixed) continue;             // letras en su sitio: no se tocan
+      if (A.fixed) freeLetter(A);                    // la golpean → se suelta y cae
+      if (B.fixed) freeLetter(B);
       const w = A.im + B.im; if (w === 0) continue;
       if (ox < oy) {
         const s = Math.sign(dx) || 1, m = ox / w;
@@ -271,11 +314,11 @@ function solveCards() {
 function solveWalls() {
   for (const B of bodies) {
     if (B.im === 0) continue;
-    const r = B.card ? S / 2 : 1;
-    if (B.x < r)     { const v = B.x - B.px; B.x = r;     B.px = B.x + v * 0.5; }
-    if (B.x > W - r) { const v = B.x - B.px; B.x = W - r; B.px = B.x + v * 0.5; }
-    if (B.y < r)     { const v = B.y - B.py; B.y = r;     B.py = B.y + v * 0.5; }
-    if (B.y > H - r) { const v = B.y - B.py; B.y = H - r; B.py = B.y + v * 0.5; }
+    const rx = B.hw || 1, ry = B.hh || 1;
+    if (B.x < rx)     { const v = B.x - B.px; B.x = rx;     B.px = B.x + v * 0.5; }
+    if (B.x > W - rx) { const v = B.x - B.px; B.x = W - rx; B.px = B.x + v * 0.5; }
+    if (B.y < ry)     { const v = B.y - B.py; B.y = ry;     B.py = B.y + v * 0.5; }
+    if (B.y > H - ry) { const v = B.y - B.py; B.y = H - ry; B.py = B.y + v * 0.5; }
   }
 }
 
@@ -306,6 +349,10 @@ function draw() {
     const ly = Math.max(10, minY - lh - 18);
     labelEl.style.transform = `translate3d(${lx}px, ${ly}px, 0)`;
   }
+  for (const l of letters) {
+    const B = bodies[l.b];
+    l.el.style.transform = `translate3d(${B.x - B.hw}px, ${B.y - B.hh}px, 0)`;
+  }
   for (const c of cards) {
     const B = bodies[c.b];
     c.el.style.transform = `translate3d(${B.x - S / 2}px, ${B.y - S / 2}px, 0)`;
@@ -314,13 +361,14 @@ function draw() {
 
 function frame() {
   integrate();
-  for (let k = 0; k < ITER; k++) { solveLinks(); solveCards(); solveWalls(); }
+  for (let k = 0; k < ITER; k++) { solveLinks(); solveSolids(); solveWalls(); }
   draw();
   requestAnimationFrame(frame);
 }
 
 /* ===================== INICIO ===================== */
 resize();
+buildTitle();
 build();
 addEventListener('resize', resize);
 requestAnimationFrame(frame);
