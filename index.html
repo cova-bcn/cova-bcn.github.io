@@ -291,6 +291,7 @@ const E_WHITE = 0.25;    // rebote cuando hay un píxel blanco de por medio (pes
 const WHITE_MASS = 4;    // los blancos pesan 4 veces más de lo que les corresponde por tamaño
 const WHITE_FRICTION = 1.8; // frenado de los blancos sueltos (más alto = se paran antes)
 const BOX_E = 0.6;       // rebote contra el reproductor
+const WHITE_GRAVITY = 70; // caída de los blancos sueltos (px/s²); con el frenado caen despacio
 
 function collidePair(i, j) {
   if (i < L && j < L && !freeL[i] && !freeL[j]) return; // logo intacto con logo intacto: no chocan
@@ -333,7 +334,9 @@ function step(dt) {
     if (i < L && !freeL[i]) continue;
     const s2 = vx[i] * vx[i] + vy[i] * vy[i];
     if (s2 > 1440000) { const k = 1200 / Math.sqrt(s2); vx[i] *= k; vy[i] *= k; }
-    if (i < L) { vx[i] *= wf; vy[i] *= wf; }        // blancos: pesados, se frenan
+    if (i < L) {                                    // blancos: pesados, se frenan y caen despacio
+      vx[i] *= wf; vy[i] = vy[i] * wf + WHITE_GRAVITY * dt;
+    }
     px[i] += vx[i] * dt; py[i] += vy[i] * dt;
     const r = pr[i], we = i < L ? 0.3 : 0.8;        // rebote en los bordes
     if (px[i] < r)     { px[i] = r;     vx[i] =  Math.abs(vx[i]) * we; }
@@ -461,6 +464,7 @@ function collideBox(i) {
   const r = pr[i];
   const BL = box.x, BT = box.y, BR = box.x + box.w, BB = box.y + box.h;
   if (px[i] + r <= BL || px[i] - r >= BR || py[i] + r <= BT || py[i] - r >= BB) return;
+  if (i < L) freeL[i] = 1;                          // un blanco tocado por el reproductor se suelta
   // sale por el lado con menor penetración
   let m = px[i] + r - BL, nx = -1, ny = 0, t;
   if ((t = BR - (px[i] - r)) < m) { m = t; nx = 1;  ny = 0; }
@@ -474,7 +478,13 @@ function collideBox(i) {
   }
 }
 function collideBoxAll() {
-  for (let i = 0; i < n; i++) if (i >= L || freeL[i]) collideBox(i);
+  // los blancos aún en su sitio solo reaccionan si el reproductor se está moviendo
+  // (así, si se queda quieto encima del logo, no lo deshace)
+  const moving = box.dragging || Math.abs(box.vx) + Math.abs(box.vy) > 5;
+  for (let i = 0; i < n; i++) {
+    if (i < L && !freeL[i] && !moving) continue;
+    collideBox(i);
+  }
 }
 
 /* ===================== BUCLE ===================== */
