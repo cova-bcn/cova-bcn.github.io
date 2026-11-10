@@ -187,6 +187,7 @@ function spawn(x, y, svx, svy, col) {
   let i;
   if (n < MAX) i = n++;
   else { i = ring; ring = ring + 1 >= MAX ? L : ring + 1; } // recicla las más antiguas (nunca el logo)
+  if (under.length) under[i] = 0;
   px[i] = x; py[i] = y; vx[i] = svx; vy[i] = svy;
   pr[i] = 1.2 + Math.random() * 2.3;
   pc[i] = col; pg[i] = 0;
@@ -460,10 +461,22 @@ function collidePointer() {
 }
 
 /* ===================== CHOQUE CON EL REPRODUCTOR ===================== */
+// "under" = píxel que ya estaba tapado por el reproductor: el reproductor va por delante,
+// así que no lo choca; solo empuja los que se encuentra con sus bordes al moverse.
+let under = new Uint8Array(0);
+function markUnderBox() {
+  under = new Uint8Array(MAX);
+  for (let i = 0; i < n; i++) if (overlapsBox(i)) under[i] = 1;
+}
+function overlapsBox(i) {
+  const r = pr[i];
+  return !(px[i] + r <= box.x || px[i] - r >= box.x + box.w || py[i] + r <= box.y || py[i] - r >= box.y + box.h);
+}
 function collideBox(i) {
   const r = pr[i];
   const BL = box.x, BT = box.y, BR = box.x + box.w, BB = box.y + box.h;
-  if (px[i] + r <= BL || px[i] - r >= BR || py[i] + r <= BT || py[i] - r >= BB) return;
+  if (px[i] + r <= BL || px[i] - r >= BR || py[i] + r <= BT || py[i] - r >= BB) { under[i] = 0; return; }
+  if (under[i]) return;                             // sigue tapado por detrás
   if (i < L) freeL[i] = 1;                          // un blanco tocado por el reproductor se suelta
   // sale por el lado con menor penetración
   let m = px[i] + r - BL, nx = -1, ny = 0, t;
@@ -623,8 +636,8 @@ document.getElementById('start').addEventListener('click', e => {
 W = innerWidth; H = innerHeight;
 allocParticles();
 resize();
-box.x = W - box.w - 30; box.y = H - box.h - 30;   // empieza en la esquina, dejando ver el logo
-box.x = Math.max(0, box.x); box.y = Math.max(0, box.y);
+box.x = (W - box.w) / 2; box.y = (H - box.h) / 2;  // empieza en el centro, delante del logo
+markUnderBox();
 addEventListener('resize', resize);
 requestAnimationFrame(frame);
 </script>
