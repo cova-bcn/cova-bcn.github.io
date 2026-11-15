@@ -35,41 +35,26 @@
   #grab { position: absolute; inset: 0; z-index: 2; cursor: grab; touch-action: none; }
   body.dragging #grab { cursor: grabbing; }
 
-  #controls { position: fixed; right: 14px; bottom: 14px; z-index: 5; display: flex; gap: 8px; }
-  #controls button {
-    background: rgba(255,255,255,.08); color: #eee; border: 0;
-    border-radius: 10px; padding: 8px 12px; font: 13px system-ui, sans-serif; cursor: pointer;
-    opacity: .55; transition: opacity .2s;
+  #teamLink {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
+    color: #fff; text-decoration: none; font: 600 13px system-ui, sans-serif; letter-spacing: .06em;
+    opacity: .7; transition: opacity .2s; padding: 4px 8px;
   }
-  #controls button:hover { opacity: 1; background: rgba(255,255,255,.16); }
-  #controls button.on { background: #ff3fb4; color: #000; opacity: 1; }
+  #teamLink:hover { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
   #boxMenu {
     position: fixed; left: 0; top: 0; z-index: 6; display: flex; gap: 10px;
     padding-top: 12px;                       /* puente invisible entre recuadro y botones */
     opacity: 0; pointer-events: none; transition: opacity .2s;
   }
   #boxMenu.show { opacity: 1; pointer-events: auto; }
-  #boxMenu a {
+  #boxMenu a, #boxMenu button {
     color: #fff; text-decoration: none; font: 600 14px system-ui, sans-serif; letter-spacing: .03em;
     padding: 10px 18px; border: 1.5px solid #fff; border-radius: 999px;
     background: rgba(5,5,10,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     white-space: nowrap;
   }
   #boxMenu a:hover { background: #fff; color: #000; }
-  #btnShuffle {
-    position: fixed; left: calc(50% - 34px); bottom: 18px; z-index: 5;
-    width: 68px; height: 68px; padding: 0; border: 0; background: transparent;
-    cursor: pointer; -webkit-tap-highlight-color: transparent;
-  }
-  #btnShuffle svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 2px 6px rgba(0,0,0,.6)); }
-  #btnShuffle.spin svg { animation: dice-spin .6s cubic-bezier(.3,.7,.3,1); }
-  #teamLink {
-    position: fixed; left: 16px; bottom: 18px; z-index: 5; width: 52px; height: 52px;
-    display: block; opacity: .75; transition: opacity .2s; -webkit-tap-highlight-color: transparent;
-  }
-  #teamLink:hover { opacity: 1; }
-  #teamLink svg { width: 100%; height: 100%; filter: drop-shadow(0 2px 6px rgba(0,0,0,.6)); }
-  @keyframes dice-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  #boxMenu a { cursor: pointer; }
 
   #start {
     position: fixed; inset: 0; z-index: 10; display: grid; place-items: center;
@@ -89,27 +74,12 @@
   <div id="grab"></div>
 </div>
 
+<a id="teamLink" href="equipo.html">Qui som?</a>
 <div id="boxMenu">
   <a id="lnkVideo" href="https://www.youtube.com/@COVAbcn" target="_blank" rel="noopener">▶ Ver vídeo</a>
   <a id="lnkChannel" href="https://www.youtube.com/@COVAbcn" target="_blank" rel="noopener">Ver canal</a>
+  <a id="lnkShuffle" href="#" role="button">⤨ Otro momento</a>
 </div>
-<div id="controls">
-  <button id="btnMic" title="Usar el micrófono para seguir el ritmo real">🎤 Micro</button>
-</div>
-<a id="teamLink" href="equipo.html" title="El equipo" aria-label="Ver el equipo">
-  <svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="18" cy="17" r="6"/><path d="M7 38c1.5-7 6-10.5 11-10.5S27.5 31 29 38"/>
-    <circle cx="32" cy="15" r="5"/><path d="M30 26.5c5 0 9.5 3 11 10"/>
-  </svg>
-</a>
-<button id="btnShuffle" title="Otro vídeo del canal, desde un momento al azar" aria-label="Otro vídeo al azar">
-  <svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="7" y="7" width="34" height="34" rx="8"/>
-    <circle cx="16.5" cy="16.5" r="2.2"/><circle cx="31.5" cy="16.5" r="2.2"/>
-    <circle cx="24" cy="24" r="2.2"/>
-    <circle cx="16.5" cy="31.5" r="2.2"/><circle cx="31.5" cy="31.5" r="2.2"/>
-  </svg>
-</button>
 
 <div id="start"><div><b>▶ TOCA PARA EMPEZAR</b><small>Puedes arrastrar el vídeo por la pantalla</small></div></div>
 
@@ -236,45 +206,13 @@ function buildGrid() {
 }
 
 /* ===================== AUDIO / RITMO ===================== */
-let mode = 'auto';                 // 'auto' (ritmo sintético sincronizado al vídeo) o 'mic'
-let analyser = null, fbuf = null, actx = null, micStream = null;
 let bass = 0, mid = 0, high = 0, pulse = 0, lastBeat = 0;
 const hist = [];
 let bpm = 120, nextBeat = 0, beatCount = 0;
 
-async function enableMic() {
-  micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-  });
-  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-  await actx.resume();
-  const src = actx.createMediaStreamSource(micStream);
-  analyser = actx.createAnalyser();
-  analyser.fftSize = 1024;
-  analyser.smoothingTimeConstant = 0.55;
-  src.connect(analyser);
-  fbuf = new Uint8Array(analyser.frequencyBinCount);
-}
-function disableMic() {
-  if (micStream) micStream.getTracks().forEach(t => t.stop());
-  micStream = null; analyser = null;
-}
-
-function bandAvg(a, b) {
-  let s = 0; for (let i = a; i < b; i++) s += fbuf[i];
-  return s / ((b - a) * 255);
-}
 
 function analyse(t, dt) {
-  if (mode === 'mic' && analyser) {
-    analyser.getByteFrequencyData(fbuf);
-    bass = bandAvg(1, 10); mid = bandAvg(10, 90); high = bandAvg(90, 320);
-    hist.push(bass); if (hist.length > 50) hist.shift();
-    const avg = hist.reduce((a, b) => a + b, 0) / hist.length;
-    if (bass > avg * 1.28 && bass > 0.18 && t - lastBeat > 0.22) {
-      beat(Math.min(1, 0.35 + (bass - avg) * 5));
-    }
-  } else if (playing) {
+  if (playing) {
     // Ritmo sintético: el audio de YouTube no es accesible desde la página.
     const spb = 60 / bpm;
     if (t >= nextBeat) {
@@ -380,6 +318,8 @@ function step(dt) {
   }
 }
 
+const BOX_PULSE = 0.018;   // cuánto crece el reproductor en cada beat (0.018 = 1,8 %)
+let boxPulse = 0;
 function updateBox(dt) {
   if (box.dragging) {
     const nx = Math.min(Math.max(0, box.tx), W - box.w);
@@ -399,7 +339,12 @@ function updateBox(dt) {
     if (Math.abs(box.vx) < 2) box.vx = 0;
     if (Math.abs(box.vy) < 2) box.vy = 0;
   }
-  boxEl.style.transform = `translate3d(${box.x}px, ${box.y}px, 0)`;
+  // pulso suave al ritmo (sube con cada beat y se relaja despacio)
+  const tp = pulse;
+  boxPulse += (tp - boxPulse) * Math.min(1, dt * (tp > boxPulse ? 18 : 5));
+  const sc = 1 + boxPulse * BOX_PULSE;
+  boxEl.style.transform = `translate3d(${box.x}px, ${box.y}px, 0) scale(${sc.toFixed(4)})`;
+  boxEl.style.setProperty('--glow', (18 + boxPulse * 34).toFixed(1) + 'px');
   placeMenu();
 }
 
@@ -563,7 +508,7 @@ function placeMenu() {
   const mw = menuEl.offsetWidth, mh = menuEl.offsetHeight;
   const x = Math.min(Math.max(8, box.x + box.w / 2 - mw / 2), W - mw - 8);
   let y = box.y + box.h;                               // debajo del recuadro
-  if (y + mh > H - 90) y = box.y - mh - 4;             // si no cabe, encima
+  if (y + mh > H - 8) y = box.y - mh - 4;              // si no cabe, encima
   menuEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
 }
 function showMenu(ms) {
@@ -585,13 +530,32 @@ boxEl.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hid
 menuEl.addEventListener('pointerenter', () => clearTimeout(menuTimer));
 menuEl.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideMenuSoon(); });
 // al pulsar "ver vídeo" se pausa aquí para no oírlo dos veces
-lnkVideo.addEventListener('click', () => { showMenu(); try { player.pauseVideo(); } catch (_) {} });
+lnkVideo.addEventListener('click', () => { showMenu(); userPaused = true; try { player.pauseVideo(); } catch (_) {} });
+
+document.getElementById('lnkShuffle').addEventListener('click', e => {
+  e.preventDefault();
+  playRandom();                                       // otro vídeo al azar, desde un momento al azar
+});
 
 function togglePause() {
   if (!ready || !player) return;
-  if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
-  else player.playVideo();
+  if (player.getPlayerState() === YT.PlayerState.PLAYING) { userPaused = true; player.pauseVideo(); }
+  else { userPaused = false; player.playVideo(); }
 }
+
+/* ----- vigilante: que la música no se pare nunca (salvo pausa a propósito) ----- */
+let stuckSince = 0;
+setInterval(() => {
+  if (!started || !ready || !player || userPaused) { stuckSince = 0; return; }
+  let st; try { st = player.getPlayerState(); } catch (_) { return; }
+  if (st === YT.PlayerState.PLAYING) { stuckSince = 0; return; }
+  if (st === YT.PlayerState.ENDED) { playRandom(true); return; }
+  const now = performance.now();
+  if (!stuckSince) { stuckSince = now; return; }
+  const secs = (now - stuckSince) / 1000;
+  if (secs > 4 && st !== YT.PlayerState.BUFFERING) { try { player.playVideo(); } catch (_) {} }
+  if (secs > 12) playRandom(true);                 // sigue atascado → otro vídeo
+}, 2000);
 bar.addEventListener('pointercancel', endDrag);
 
 /* ===================== YOUTUBE ===================== */
@@ -627,23 +591,27 @@ window.onYouTubeIframeAPIReady = () => {
             if (dur > 0) { needSeek = false; player.seekTo(Math.random() * dur * 0.85, true); }
           }
         } else if (e.data === YT.PlayerState.ENDED) {
-          playing = false; playRandom();
+          playing = false; playRandom(true);         // vídeo terminado → otro, desde el principio
         } else if (e.data === YT.PlayerState.PAUSED) {
           playing = false;
         } else if (e.data === YT.PlayerState.BUFFERING) {
           playing = false;
         }
       },
-      onError: () => setTimeout(playRandom, 800)   // vídeo no incrustable → otro
+      onError: () => setTimeout(() => playRandom(lastFromStart), 800)   // vídeo no incrustable → otro
     }
   });
 };
 
-let needSeek = false, seekIdx = -1;
+let needSeek = false, seekIdx = -1, lastFromStart = false, userPaused = false;
 const vtitle = document.getElementById('vtitle');
-function playRandom() {
+// fromStart = true  → empieza desde el principio (cuando el anterior terminó)
+// fromStart = false → empieza en un momento al azar (botón "Otro momento" y al arrancar)
+function playRandom(fromStart = false) {
   if (!ready) return;
-  needSeek = true; seekIdx = -1;
+  lastFromStart = fromStart === true;
+  needSeek = !lastFromStart; seekIdx = -1;
+  userPaused = false; stuckSince = 0;
   const list = player.getPlaylist();
   if (list && list.length) {
     const cur = player.getPlaylistIndex();
@@ -658,21 +626,7 @@ function playRandom() {
 }
 
 /* ===================== CONTROLES ===================== */
-const btnShuffle = document.getElementById('btnShuffle');
-btnShuffle.addEventListener('click', () => {
-  btnShuffle.classList.remove('spin'); void btnShuffle.offsetWidth; btnShuffle.classList.add('spin');
-  playRandom();
-});
 
-const btnMic = document.getElementById('btnMic');
-btnMic.addEventListener('click', async () => {
-  if (mode === 'mic') {
-    disableMic(); mode = 'auto'; btnMic.classList.remove('on');
-  } else {
-    try { await enableMic(); mode = 'mic'; btnMic.classList.add('on'); }
-    catch (err) { alert('No se pudo acceder al micrófono.'); }
-  }
-});
 
 document.getElementById('start').addEventListener('click', e => {
   started = true;
